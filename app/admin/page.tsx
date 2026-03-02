@@ -1,5 +1,7 @@
+
 import DashboardCharts from "./DashboardCharts";
 import CodeGenerator from "./CodeGenerator";
+import IssueCode from "./IssueCode";
 import { createClient } from "@supabase/supabase-js";
 
 export default async function AdminPage() {
@@ -42,6 +44,10 @@ export default async function AdminPage() {
         />
       </div>
 
+      {/* NOVO: Emissão de código em 1 clique */}
+      <IssueCode />
+
+      {/* Se você ainda quiser manter o gerador antigo, deixa os dois */}
       <CodeGenerator />
       <DashboardCharts prizesCount={prizesCount} />
 
@@ -54,7 +60,8 @@ export default async function AdminPage() {
               <th>WhatsApp</th>
               <th>Código</th>
               <th>Prêmio</th>
-              <th>Data</th>
+              <th>Válido até</th>
+              <th>Data do resgate</th>
             </tr>
           </thead>
           <tbody>
@@ -64,7 +71,8 @@ export default async function AdminPage() {
                 <td>{s.phone}</td>
                 <td>{s.code}</td>
                 <td>{s.prize}</td>
-                <td>{s.created_at ? new Date(s.created_at).toLocaleString() : "-"}</td>
+                <td>{s.valid_until ? new Date(s.valid_until).toLocaleDateString("pt-BR") : "-"}</td>
+                <td>{s.created_at ? new Date(s.created_at).toLocaleString("pt-BR") : "-"}</td>
               </tr>
             ))}
           </tbody>

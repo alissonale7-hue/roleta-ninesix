@@ -6,77 +6,141 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+function makeReceiptId() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const rand = Math.floor(100000 + Math.random() * 900000);
+  return `NSX-${yyyy}-${rand}`;
+}
+
 export async function POST(req) {
   try {
     const body = await req.json();
-    const name = String(body.name || "").trim();
-    const phone = String(body.phone || "").trim();
-    const code = String(body.code || "").trim().toUpperCase();
-    const prize = String(body.prize || "").trim();
+    const name = String(body?.name || "").trim();
+    const phone = String(body?.phone || "").trim();
+    const code = String(body?.code || "").trim().toUpperCase();
 
-    if (!name || !phone || !code || !prize) {
+    // IP e UA (opcional)
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      req.headers.get("x-real-ip") ||
+      null;
+    const user_agent = req.headers.get("user-agent") || null;
+
+    if (!name || !phone || !code) {
       return NextResponse.json(
-        { error: "Dados incompletos (nome, whatsapp, código e prêmio)." },
+        { error: "Preencha nome, WhatsApp e código." },
         { status: 400 }
       );
     }
 
-    // 1) Buscar código
-    const { data: codeData, error: codeError } = await supabase
+    // 1) buscar código
+    const { data: codeRow, error: codeErr } = await supabase
       .from("codes")
-      .select("code, used")
+      .select("*")
       .eq("code", code)
       .single();
 
-    if (codeError || !codeData) {
+    if (codeErr || !codeRow) {
       return NextResponse.json({ error: "Código inválido." }, { status: 400 });
     }
 
-    if (codeData.used) {
-      return NextResponse.json({ error: "Código já utilizado." }, { status: 400 });
+    if (codeRow.used) {
+      return NextResponse.json(
+        { error: "Esse código já foi usado." },
+        { status: 400 }
+      );
     }
 
-    // 2) Inserir em spins PRIMEIRO (se falhar, não gasta o código)
-    const { error: spinError } = await supabase.from("spins").insert([
-      {
-        name,
-        phone,
-        code,
-        prize,
-        ip: req.headers.get("x-forwarded-for") || null,
-        user_agent: req.headers.get("user-agent") || null,
-      },
-    ]);
-
-    if (spinError) {
+    // 2) checar se foi emitido por você (issued_at e redeem_until)
+    if (!codeRow.issued_at || !codeRow.redeem_until) {
       return NextResponse.json(
-        { error: "Erro ao salvar o giro (spins).", details: spinError.message },
+        { error: "Código ainda não foi liberado. Solicite um novo código." },
+        { status: 400 }
+      );
+    }
+
+    const now = new Date();
+    const redeemUntil = new Date(codeRow.redeem_until);
+
+    if (now > redeemUntil) {
+      return NextResponse.json(
+        { error: "Código expirado (7 dias). Solicite um novo código." },
+        { status: 400 }
+      );
+    }
+
+    // 3) sortear prêmio (use sua lógica atual aqui)
+    // Se você já tem pesos no backend, mantém.
+    // Se não tiver, comece simples (depois refinamos para pesos exatos):
+    const prizes = [
+      "5% desconto",
+      "Frete grátis",
+      "10% desconto",
+      "Smartwatch",
+      "12x sem juros",
+    ];
+    const prize = prizes[Math.floor(Math.random() * prizes.length)];
+
+    // 4) validade do cupom: 30 dias a partir do resgate
+    const validUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    // 5) gerar comprovante
+    const receipt_id = makeReceiptId();
+
+    // 6) inserir resgate em spins
+    const { data: spinInserted, error: spinErr } = await supabase
+      .from("spins")
+      .insert([
+        {
+          name,
+          phone,
+          code,
+          prize,
+          receipt_id,
+          valid_until: validUntil.toISOString(),
+          ip,
+          user_agent,
+        },
+      ])
+      .select("*")
+      .single();
+
+    if (spinErr) {
+      return NextResponse.json(
+        { error: "Erro ao salvar o resgate.", details: spinErr.message },
         { status: 500 }
       );
     }
 
-    // 3) Marcar código como usado SÓ depois do insert
-    const { error: updError } = await supabase
+    // 7) marcar code como usado
+    const { error: usedErr } = await supabase
       .from("codes")
       .update({
         used: true,
-        used_at: new Date().toISOString(),
         used_by_phone: phone,
+        used_at: now.toISOString(),
       })
-      .eq("code", code);
+      .eq("code", code)
+      .eq("used", false);
 
-    if (updError) {
-      // Se falhar aqui, pelo menos o spin já ficou gravado
+    if (usedErr) {
       return NextResponse.json(
-        { error: "Spin salvo, mas falhou ao marcar código como usado.", details: updError.message },
+        { error: "Erro ao marcar o código como usado.", details: usedErr.message },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ success: true });
+    // 8) retornar para o front montar comprovante
+    return NextResponse.json({
+      success: true,
+      prize,
+      receipt_id,
+      valid_until: validUntil.toISOString(),
+    });
   } catch (e) {
     return NextResponse.json(
-      { error: "Erro inesperado no servidor." },
+      { error: "Erro inesperado." },
       { status: 500 }
     );
   }
