@@ -6,16 +6,21 @@ export default async function AdminPage() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const { data: spins = [] } = await supabase
-    .from("spins")
-    .select("*")
-    .order("created_at", { ascending: false });
+const { data: spinsData } = await supabase
+  .from("spins")
+  .select("*")
+  .order("created_at", { ascending: false });
 
-  const { data: codes = [] } = await supabase.from("codes").select("*");
+const { data: codesData } = await supabase
+  .from("codes")
+  .select("*");
 
-  const totalCodes = codes.length;
-  const usedCodes = codes.filter((c: any) => c.used).length;
-  const availableCodes = totalCodes - usedCodes;
+const spins = spinsData ?? [];
+const codes = codesData ?? [];
+
+const totalCodes = codes.length;
+const usedCodes = codes.filter((c: any) => c.used).length;
+const availableCodes = totalCodes - usedCodes;
 
   const prizesCount: Record<string, number> = {};
   spins.forEach((s: any) => {
