@@ -2,15 +2,22 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(req: NextRequest) {
-  const isAdminRoute = req.nextUrl.pathname.startsWith("/admin");
-  const isLoginRoute = req.nextUrl.pathname.startsWith("/admin-login");
+  const path = req.nextUrl.pathname;
 
-  if (isLoginRoute) return NextResponse.next();
+  const isAdminPage = path.startsWith("/admin");
+  const isLoginPage = path.startsWith("/admin-login");
+  const isAdminApi = path.startsWith("/api/admin");
 
-  if (isAdminRoute) {
+  if (isLoginPage) return NextResponse.next();
+
+  if (isAdminPage || isAdminApi) {
     const cookie = req.cookies.get("admin_auth")?.value;
 
     if (cookie !== "ok") {
+      if (isAdminApi) {
+        return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+      }
+
       const url = req.nextUrl.clone();
       url.pathname = "/admin-login";
       return NextResponse.redirect(url);
@@ -21,5 +28,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/api/admin/:path*"],
 };
